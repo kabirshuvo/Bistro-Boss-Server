@@ -100,7 +100,7 @@ async function run() {
       const email = req.params.email;
 
       if(req.decoded.email !== email){
-        res.send({admin: false})
+        return res.send({admin: false})
       }
       const query = {email: email}
       const user = await usersCollection.findOne(query);
@@ -121,11 +121,23 @@ async function run() {
       res.send(result);
     });
 
-    // menu related APIes :
+    //* menu related APIes :
+
     app.get("/menu", async (req, res) => {
       const result = await menuCollection.find().toArray();
       res.send(result);
     });
+
+    app.post('/menu',verifyJWT, verifyAdmin, async(req, res) => {
+      const newItem = req.body;
+      const result = await menuCollection.insertOne(newItem);
+      res.send(result);
+    })
+
+
+
+
+
     // review related apies :
     app.get("/reviews", async (req, res) => {
       const result = await reviewsCollection.find().toArray();
