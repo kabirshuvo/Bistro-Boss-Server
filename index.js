@@ -4,7 +4,7 @@ const cors = require("cors");
 const jwt = require("jsonwebtoken");
 require("dotenv").config();
 const port = process.env.PORT || 5000;
-
+const stripe = require('stripe')(process.env.PAYMENT_SECRET_KEY)
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 //middlewares
@@ -135,8 +135,13 @@ async function run() {
     })
 
 
-
-
+    app.delete('/menu/:id', verifyJWT, verifyAdmin, async (req, res) => {
+      const id = req.params.id;
+      console.log('From the server', id)
+      const query = { _id: new ObjectId(id) }
+      const result = await menuCollection.deleteOne(query);
+      res.send(result);
+    })
 
     // review related apies :
     app.get("/reviews", async (req, res) => {
@@ -177,6 +182,25 @@ async function run() {
     });
 
     // * -------Cart Collection---END-------
+
+
+// * _______________PAYMENT______________
+
+app.post('/create-payment-intent', async(req, res)=>{
+  const {price} = req.body;
+  const amount = price*100;
+  const paymentIntent = await stripe.paymentIntents.create({amount: amount, 
+  currency: 'usd',
+  payment_method_types: ['card']
+  })
+  res.send({
+    clientSecret: paymentIntent.client_secret
+  })
+})
+
+
+
+
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
