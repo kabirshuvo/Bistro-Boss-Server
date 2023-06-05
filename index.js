@@ -183,9 +183,7 @@ async function run() {
       res.send(result);
     });
 
-    // * -------Cart Collection---END-------
-
-    // * _______________PAYMENT______________
+    // * _______________PAYMENT___intent__________
 
     // payment intent creation
     app.post("/create-payment-intent", verifyJWT, async (req, res) => {
@@ -195,7 +193,7 @@ async function run() {
       const paymentIntent = await stripe.paymentIntents.create({
         amount: amount,
         currency: "usd",
-        payment_method_types: ["card"]
+        payment_method_types: ["card"],
       });
 
       res.send({
@@ -203,22 +201,39 @@ async function run() {
       });
     });
 
-    // * ______Payment_______API________
+    // * ______Payment_______API's________
 
-    app.post('/payments', verifyJWT, async(req, res) => {
-        const payment = req.body;
-        const InsertResult = await paymentCollection.insertOne(payment);
+    app.post("/payments", verifyJWT, async (req, res) => {
+      const payment = req.body;
+      const InsertResult = await paymentCollection.insertOne(payment);
 
+      const query = {
+        _id: { $in: payment.cartItems.map((id) => new ObjectId(id)) },
+      };
+      const deleteResult = await userCartCollection.deleteMany(query);
 
-        const query = {_id: { $in: payment.cartItems.map(id => new ObjectId(id))}}
+      res.send({ InsertResult, deleteResult });
+    });
 
-        const deleteResult = await userCartCollection.deleteMany(query)
+    app.get("/admin-stats",verifyJWT, verifyAdmin, async (req, res) => {
+      const users = await userCartCollection.estimatedDocumentCount();
+      const totalMenuItems = await menuCollection.estimatedDocumentCount();
+      const orders = await paymentCollection.estimatedDocumentCount();
 
+      // * may be this is not Best way to get sum by reduce.
 
-        res.send({InsertResult, deleteResult});
+      const payments = await paymentCollection.find().toArray();
+      const totalSell = payments.reduce((sum, payment) => parseInt(sum + payment.price), 0);
 
+      res.send({
+        users,
+        totalMenuItems,
+        orders,
+        totalSell
+      });
+    });
 
-    })
+    // *_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_*
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
