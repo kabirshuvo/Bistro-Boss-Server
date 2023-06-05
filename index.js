@@ -4,7 +4,7 @@ const cors = require("cors");
 const jwt = require("jsonwebtoken");
 require("dotenv").config();
 const port = process.env.PORT || 5000;
-const stripe = require('stripe')(process.env.PAYMENT_SECRET_KEY)
+const stripe = require("stripe")(process.env.PAYMENT_SECRET_KEY);
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 //middlewares
@@ -55,6 +55,7 @@ async function run() {
     const menuCollection = client.db("bistroDb").collection("menu");
     const reviewsCollection = client.db("bistroDb").collection("reviews");
     const userCartCollection = client.db("bistroDb").collection("userCart");
+    const paymentCollection = client.db("bistroDb").collection("payments");
 
     app.post("/jwt", (req, res) => {
       const user = req.body;
@@ -64,21 +65,22 @@ async function run() {
       res.send({ token });
     });
 
-
-  // Warning: use verifyAdmin after verifyJWT 
-  const verifyAdmin = async (req, res, next) => {
-    const email = req.decoded.email;
-    const query = { email: email }
-    const user = await usersCollection.findOne(query);
-    if (user?.role !== 'admin') {
-      return res.status(403).send({ error: true, message: 'forbidden message' });
-    }
-    next();
-  }
+    // Warning: use verifyAdmin after verifyJWT
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.decoded.email;
+      const query = { email: email };
+      const user = await usersCollection.findOne(query);
+      if (user?.role !== "admin") {
+        return res
+          .status(403)
+          .send({ error: true, message: "forbidden message" });
+      }
+      next();
+    };
 
     /**
      * 1. use jwt token: verifyJWT
-     * */ 
+     * */
 
     // user related apis
     app.get("/users", verifyJWT, verifyAdmin, async (req, res) => {
@@ -96,17 +98,17 @@ async function run() {
       res.send(result);
     });
 
-    app.get('/users/admin/:email', verifyJWT, async(req, res) => {
+    app.get("/users/admin/:email", verifyJWT, async (req, res) => {
       const email = req.params.email;
 
-      if(req.decoded.email !== email){
-        return res.send({admin: false})
+      if (req.decoded.email !== email) {
+        return res.send({ admin: false });
       }
-      const query = {email: email}
+      const query = { email: email };
       const user = await usersCollection.findOne(query);
-      const result = {admin: user?.role === 'admin'}
+      const result = { admin: user?.role === "admin" };
       res.send(result);
-    })
+    });
 
     app.patch("/users/admin/:id", async (req, res) => {
       const id = req.params.id;
@@ -128,20 +130,19 @@ async function run() {
       res.send(result);
     });
 
-    app.post('/menu',verifyJWT, verifyAdmin, async(req, res) => {
+    app.post("/menu", verifyJWT, verifyAdmin, async (req, res) => {
       const newItem = req.body;
       const result = await menuCollection.insertOne(newItem);
       res.send(result);
-    })
+    });
 
-
-    app.delete('/menu/:id', verifyJWT, verifyAdmin, async (req, res) => {
+    app.delete("/menu/:id", verifyJWT, verifyAdmin, async (req, res) => {
       const id = req.params.id;
-      console.log('From the server', id)
-      const query = { _id: new ObjectId(id) }
+      console.log("From the server", id);
+      const query = { _id: new ObjectId(id) };
       const result = await menuCollection.deleteOne(query);
       res.send(result);
-    })
+    });
 
     // review related apies :
     app.get("/reviews", async (req, res) => {
@@ -158,10 +159,11 @@ async function run() {
       }
 
       const decodedEmail = req.decoded.email;
-      if(email !== decodedEmail){
-        return res.status(403).send({error: true, message: 'Forbidden User Access'})
+      if (email !== decodedEmail) {
+        return res
+          .status(403)
+          .send({ error: true, message: "Forbidden User Access" });
       }
-
 
       const query = { email: email };
       const result = await userCartCollection.find(query).toArray();
@@ -183,24 +185,40 @@ async function run() {
 
     // * -------Cart Collection---END-------
 
+    // * _______________PAYMENT______________
 
-// * _______________PAYMENT______________
+    // payment intent creation
+    app.post("/create-payment-intent", verifyJWT, async (req, res) => {
+      const { price } = req.body;
+      const amount = parseInt(price * 100);
+      // console.log(amount);
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: amount,
+        currency: "usd",
+        payment_method_types: ["card"]
+      });
 
-app.post('/create-payment-intent', async(req, res)=>{
-  const {price} = req.body;
-  const amount = price*100;
-  const paymentIntent = await stripe.paymentIntents.create({amount: amount, 
-  currency: 'usd',
-  payment_method_types: ['card']
-  })
-  res.send({
-    clientSecret: paymentIntent.client_secret
-  })
-})
+      res.send({
+        clientSecret: paymentIntent.client_secret,
+      });
+    });
+
+    // * ______Payment_______API________
+
+    app.post('/payments', verifyJWT, async(req, res) => {
+        const payment = req.body;
+        const InsertResult = await paymentCollection.insertOne(payment);
 
 
+        const query = {_id: { $in: payment.cartItems.map(id => new ObjectId(id))}}
+
+        const deleteResult = await userCartCollection.deleteMany(query)
 
 
+        res.send({InsertResult, deleteResult});
+
+
+    })
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
